@@ -3,6 +3,7 @@ import React from "react";
 type IOptionsType = {
   value: string;
   label: string;
+  nextStepId?: string;
 };
 
 export type ElementTypeMap = {
@@ -60,5 +61,7 @@ export interface IStepType {
   id: string;
   bg: string;
   containerClassName?: React.HTMLProps<HTMLElement>["className"];
+  nextStepId?: string;
+  isFinalStep?: boolean;
   elements: IElementType[];
 }

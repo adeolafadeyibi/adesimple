@@ -3,9 +3,9 @@ import heroImg from "@assets/images/hero.png";
 import girlBg from "@assets/images/girlBg.png";
 import classNames from "classnames";
 import { useForm, FormProvider } from "react-hook-form";
-import { IStepType } from "@definedTypes/steps.types";
+import { ElementTypeMap, IStepType } from "@definedTypes/steps.types";
 import elementsList from "@components/elements.config";
-import { keys, pickBy } from "lodash";
+import { find, keys, pickBy } from "lodash";
 import emailjs from "@emailjs/browser";
 import SpinnerSvg from "@assets/icons/SpinnerSvg";
 import {
@@ -16,13 +16,16 @@ import {
 
 function App() {
   const [isLoading, setLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
+  const [currentStep, setCurrentStep] = useState(steps[0]?.id);
+  const [prevCompletedSteps, setPrevCompletedSteps] = useState<string[]>([]);
 
   const methods = useForm();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onSubmit = (data: any) => {
     const newValues = pickBy(data, (val) => !!val);
+
+    const step = find(steps, { id: currentStep });
 
     const oldObject = window.localStorage.getItem("formData");
 
@@ -33,7 +36,7 @@ function App() {
       ...newValues,
     };
 
-    if (currentStep === steps?.length - 1) {
+    if (step?.isFinalStep) {
       let newMessage = ``;
 
       keys(newData).map((val) => {
@@ -67,33 +70,61 @@ function App() {
           setLoading(false);
         });
     } else {
-      window.localStorage.setItem("formData", JSON.stringify(newData));
-      setCurrentStep(currentStep + 1);
+      let nexStep: string = "";
+
+      if (step?.nextStepId) {
+        nexStep = step?.nextStepId;
+      } else {
+        const firstOptionElem = find(
+          step?.elements ?? [],
+          (val) => val.type === "radio" || val.type === "select"
+        ) as ElementTypeMap["radio"] | ElementTypeMap["select"];
+
+        if (firstOptionElem) {
+          const selectedOption =
+            newData[firstOptionElem?.name as keyof typeof newData];
+          if (selectedOption) {
+            nexStep = find(firstOptionElem?.options, {
+              value: selectedOption,
+            })?.nextStepId as string;
+          }
+        }
+      }
+
+      if (nexStep) {
+        window.localStorage.setItem("formData", JSON.stringify(newData));
+        setPrevCompletedSteps([...prevCompletedSteps, currentStep]);
+        setTimeout(() => {
+          setCurrentStep(nexStep);
+        }, 0);
+      } else {
+        alert("Please select option of first question for next step!");
+      }
     }
   };
 
-  const step = steps[currentStep];
+  const step = find(steps, { id: currentStep });
 
   return (
     <div className="w-screen h-screen absolute z-10 bg-black">
       <div
         className="h-full w-full fixed top-0 left-0 right-0 bottom-0 bg-no-repeat bg-right-top -z-10"
         style={{
-          backgroundImage: `url(${step.bg})`,
+          backgroundImage: `url(${step?.bg})`,
           backgroundSize: "100% 100%",
           backgroundAttachment: "fixed",
         }}
       />
       <p className="text-lg font-semibold text-white absolute top-3 left-6">{`Step ${
-        currentStep + 1
-      } of ${steps?.length}`}</p>
+        prevCompletedSteps?.length + 1
+      }`}</p>
       <FormProvider {...methods}>
         <form
           className="w-full h-full flex flex-col flex-1"
           onSubmit={methods.handleSubmit(onSubmit)}
         >
-          <div className={classNames("py-20", step.containerClassName)}>
-            {step.elements?.map((val) => {
+          <div className={classNames("py-20", step?.containerClassName)}>
+            {step?.elements?.map((val) => {
               const foundElement = elementsList.find(
                 (el) => el.type === val.type
               );
@@ -111,12 +142,17 @@ function App() {
               disabled={isLoading}
               className={classNames(
                 {
-                  invisible: currentStep < 1,
+                  invisible: !prevCompletedSteps?.length,
                 },
                 "text-lg font-semibold text-white cursor-pointer"
               )}
               onClick={() => {
-                setCurrentStep(currentStep - 1);
+                const newArr = [...prevCompletedSteps];
+                const lastStep = newArr.pop();
+                if (lastStep) {
+                  setCurrentStep(lastStep);
+                }
+                setPrevCompletedSteps(newArr);
               }}
             >{`< Back >`}</button>
             <button
@@ -127,11 +163,7 @@ function App() {
               {isLoading ? (
                 <SpinnerSvg />
               ) : (
-                <>
-                  {currentStep === steps?.length - 1
-                    ? `<Save>`
-                    : `< Save & Next >`}
-                </>
+                <>{step?.isFinalStep ? `<Save>` : `< Save & Next >`}</>
               )}
             </button>
           </div>
@@ -152,6 +184,10 @@ export default App;
 // if element is of form type then you have to add a field as name. this should be unique. otherwise different fields with same name there value won't be as expected. Also in email I'm sending data against each name
 
 // to add validation of required for each form element there is isRequired and requiredMessage keys. I can add more validation rules whatever you'd need. let me know
+
+// For next step if there is not condition for next step. you can add next step id in nextStepId variable for each step.if you wanna add condition based on option. then on first option question you can add nextStepId for each option. Keep in mind if step is not final then nextStepId is compulsory. it either should be on step level or on option level.
+
+// as based on condition steps. final step can be multiple on based on conditions. so on which step you wanna submit the form. you have to add a variable isLastStep to true.
 
 const steps: IStepType[] = [
   {
@@ -184,10 +220,12 @@ const steps: IStepType[] = [
           {
             value: "I'm A Man Seeking A Woman",
             label: "I'm A Man Seeking A Woman",
+            nextStepId: "2",
           },
           {
             value: "I'm A Woman Seeking A Man",
             label: "I'm A Woman Seeking A Man",
+            nextStepId: "3",
           },
         ],
       },
@@ -198,6 +236,7 @@ const steps: IStepType[] = [
     containerClassName:
       "max-w-5xl lg:pl-[350px] px-5 md:px-12 flex flex-col flex-1",
     bg: girlBg,
+    nextStepId: "4",
     elements: [
       {
         id: "1",
@@ -206,23 +245,16 @@ const steps: IStepType[] = [
         videoId: "jTuiOcx0XBg",
       },
       {
-        id: "2",
-        type: "paragraph",
-        containerClassName: "mb-5",
-        text: "I Need To Talk Through Some Of My Problems And Would Like To Book A Session.",
-      },
-      {
         id: "3",
-        type: "button",
-        containerClassName: "mb-5 flex items-center justify-end",
-        text: "Book Now",
-        link: "",
+        type: "paragraph",
+        containerClassName: "mb-5 ",
+        text: "I Would Like To Book A Virtual Matchmaking Assessment In Hopes Of QualifyingTo Be Matched",
       },
       {
         id: "4",
         type: "paragraph",
         containerClassName: "mb-5 ",
-        text: "I Would Like To Book A Virtual Matchmaking Assessment In Hopes Of QualifyingTo Be Matched",
+        text: "Coming after selecting I'm a man!",
       },
       {
         id: "5",
@@ -238,6 +270,41 @@ const steps: IStepType[] = [
     containerClassName:
       "max-w-5xl lg:pl-[350px] px-5 md:px-12 flex flex-col flex-1",
     bg: girlBg,
+    nextStepId: "4",
+    elements: [
+      {
+        id: "1",
+        type: "video",
+        containerClassName: "mb-16",
+        videoId: "jTuiOcx0XBg",
+      },
+      {
+        id: "3",
+        type: "paragraph",
+        containerClassName: "mb-5 ",
+        text: "I Would Like To Book A Virtual Matchmaking Assessment In Hopes Of QualifyingTo Be Matched",
+      },
+      {
+        id: "4",
+        type: "paragraph",
+        containerClassName: "mb-5 ",
+        text: "Coming after selecting I'm a Woman!",
+      },
+      {
+        id: "5",
+        type: "button",
+        containerClassName: "mb-5 flex items-center justify-end",
+        text: "Book Now",
+        link: "",
+      },
+    ],
+  },
+  {
+    id: "4",
+    containerClassName:
+      "max-w-5xl lg:pl-[350px] px-5 md:px-12 flex flex-col flex-1",
+    bg: girlBg,
+    isFinalStep: true,
     elements: [
       {
         id: "1",
